@@ -28,17 +28,17 @@ def MediaObjectsForURL(url):
     except:
         raise Ex.MediaNotAvailable
     
-    videoData = JSON.ObjectFromURL('http://atv.at/getclip/' + video_id)['clip']
+    streamDetails = JSON.ObjectFromURL('http://atv.at/getclip/' + video_id)['clip']
     
     parts = []    
-    for partNo in range(0, len(videoData['video_urls'])):
+    for partNo in range(0, len(streamDetails['video_urls'])):
     	
     	# Prefer HLS for iOS clients
         if Client.Platform == 'iOS':
             parts.append(
                 PartObject(
-                    key = HTTPLiveStreamURL(videoData['video_urls'][partNo]),
-                    duration = videoData['durations'][partNo] * 1000
+                    key = HTTPLiveStreamURL(streamDetails['video_urls'][partNo]),
+                    duration = streamDetails['durations'][partNo] * 1000
                 )
             )
         
@@ -46,8 +46,8 @@ def MediaObjectsForURL(url):
         else:
             parts.append(
                 PartObject(
-                    key = videoData['video_progressive_urls'][partNo],
-                    duration = videoData['durations'][partNo] * 1000
+                    key = streamDetails['video_progressive_urls'][partNo],
+                    duration = streamDetails['durations'][partNo] * 1000
                 )
             )
             
@@ -55,7 +55,7 @@ def MediaObjectsForURL(url):
         video_resolution        = 360,
         audio_channels          = 2,
         optimized_for_streaming = True,
-        duration                = videoData['duration'] * 1000,
+        duration                = streamDetails['duration'] * 1000,
         parts                   = parts
     )
     
