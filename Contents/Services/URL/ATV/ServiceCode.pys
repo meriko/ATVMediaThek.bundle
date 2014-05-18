@@ -27,25 +27,41 @@ def MediaObjectsForURL(url):
         video_id = url[url.rfind("/") + 1 :]
     except:
         raise Ex.MediaNotAvailable
-        
-    videoData = GetVideoData(url, video_id)
+    
+    videoData = JSON.ObjectFromURL('http://atv.at/getclip/' + video_id)['clip']
     
     parts = []    
-    for part in videoData['parts']:
-        parts.append(
-            PartObject(
-                key = HTTPLiveStreamURL(part['url']),
-                duration = int(round(float(part['duration']) * 1000))
+    for partNo in range(0, len(videoData['video_urls'])):
+    	
+    	# Prefer HLS for iOS clients
+        if Client.Platform == 'iOS':
+            parts.append(
+                PartObject(
+                    key = HTTPLiveStreamURL(videoData['video_urls'][partNo]),
+                    duration = videoData['durations'][partNo] * 1000
+                )
             )
-        )
         
-    return [
-        MediaObject(
-            video_resolution        = 360,
-            audio_channels          = 2,
-            optimized_for_streaming = True,
-            duration                = videoData['duration'],
-            parts                   = parts
-        )
-    ]
-
+        # Use MP4 for the rest
+        else:
+            parts.append(
+                PartObject(
+                    key = videoData['video_progressive_urls'][partNo],
+                    duration = videoData['durations'][partNo] * 1000
+                )
+            )
+            
+    mo = MediaObject(
+        video_resolution        = 360,
+        audio_channels          = 2,
+        optimized_for_streaming = True,
+        duration                = videoData['duration'] * 1000,
+        parts                   = parts
+    )
+    
+    if Client.Platform != 'iOS':
+        mo.container   = Container.MP4
+        mo.video_codec = VideoCodec.H264
+        mo.audio_codec = AudioCodec.AAC
+        
+    return [mo]
