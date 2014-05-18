@@ -1,0 +1,51 @@
+from atv import GetVideoData
+
+####################################################################################################
+def MetadataObjectForURL(url):
+    try:
+        video_id = url[url.rfind("/") + 1 :]
+    except:
+        raise Ex.MediaNotAvailable
+        
+    videoData = GetVideoData(url, video_id)
+        
+    return EpisodeObject(
+        title = videoData['title'],
+        show = videoData['show'],
+        index = videoData['episode'],
+        season = videoData['season'],
+        summary = videoData['summary'],
+        thumb = videoData['thumb'],
+        duration = videoData['duration'],
+        originally_available_at = videoData['date']
+    )
+
+####################################################################################################
+@deferred
+def MediaObjectsForURL(url):
+    try:
+        video_id = url[url.rfind("/") + 1 :]
+    except:
+        raise Ex.MediaNotAvailable
+        
+    videoData = GetVideoData(url, video_id)
+    
+    parts = []    
+    for part in videoData['parts']:
+        parts.append(
+            PartObject(
+                key = HTTPLiveStreamURL(part['url']),
+                duration = int(round(float(part['duration']) * 1000))
+            )
+        )
+        
+    return [
+        MediaObject(
+            video_resolution        = 360,
+            audio_channels          = 2,
+            optimized_for_streaming = True,
+            duration                = videoData['duration'],
+            parts                   = parts
+        )
+    ]
+

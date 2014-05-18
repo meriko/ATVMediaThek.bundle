@@ -1,0 +1,115 @@
+BASE_URL         = 'http://atv.at'
+RE_CONTENTSET_ID = Regex("contentset\/([0-9]+)")
+PAGE_JSON_URL    = BASE_URL + '/player_playlist_page_json/%s/0/%i'
+CONTENTSET_JSON  = BASE_URL + '/player_contentset_json/%s'
+
+####################################################################################################
+def GetVideoData(url, video_id = None, offset = None, max_videos = None):
+    contentset_id = RE_CONTENTSET_ID.search(url).groups()[0]
+    
+    json = JSON.ObjectFromURL(PAGE_JSON_URL % (contentset_id, 1), cacheTime = CACHE_1HOUR)
+    
+    if json['total_page_count'] > 0:
+        total_page_count = json['total_page_count']
+        data = json
+    else:
+        # Some shows return zero data for the first JSON URL
+        # We'll try the backup one instead
+        json = JSON.ObjectFromURL(CONTENTSET_JSON % contentset_id, cacheTime = CACHE_1HOUR)
+        total_page_count = 1
+        data = json['playlists'][0]['pages']
+    
+    videos  = []
+    counter = 0
+     
+    for page in range(1, total_page_count + 1):
+        if total_page_count > 1:
+            data = JSON.ObjectFromURL(PAGE_JSON_URL % (contentset_id, page), cacheTime = CACHE_1HOUR)
+        
+        for video in data[str(page)]:
+            if video_id is not None and video_id != str(video['id']):
+                continue
+            
+            if offset is not None:
+                counter = counter + 1
+                
+                if counter <= offset:
+                    continue
+ 
+            videoData = {}
+
+            try:
+                for part in video['parts']:
+                    if 'url' in part:
+                        videoData['parts'] = video['parts']
+                        break
+            except:
+                continue
+                
+            if not 'parts' in videoData:
+                continue
+            
+            videoData['link'] = url + '/' +  str(video['id'])
+            
+            try:
+                videoData['title'] = unicode(video['subtitle'])
+            except:
+                videoData['title'] = unicode(video['title'])
+                
+            try:
+                videoData['show'] = unicode(video['contentset_title'])
+            except:
+                videoData['show'] = None
+                
+            if videoData['title'] == '':
+                videoData['title'] = unicode(video['title'])
+            
+            try:
+                videoData['episode'] = int(video['keyValueEpisode'])
+            except:
+                videoData['episode'] = None
+                
+            try:
+                videoData['season'] = int(video['keyValueSeason'])
+            except:
+                videoData['season'] = None
+                
+            try:
+                time = video['time'] + '\r\n'
+            except:
+                time = ''
+            
+            try:
+                videoData['summary'] = time + unicode(video['description'].replace("[br]", "\r\n"))
+            except:
+                videoData['summary'] = None
+                
+            try:
+                videoData['thumb'] = video['image_url']
+            except:
+                videoData['thumb'] = None
+            
+            try:
+                duration = 0
+                for part in video['parts']:
+                    duration = duration + float(part['duration'])
+                    
+                videoData['duration'] = int(round(duration * 1000))
+            except:
+                videoData['duration'] = None
+            
+            try:
+                videoData['date'] = Datetime.ParseDate(video['date'])
+            except:
+                videoData['date'] = None
+            
+            if video_id:
+                return videoData
+            else:
+                videos.append(videoData)
+                
+                if counter - offset >= max_videos:
+                    return videos
+
+    return videos
+    
