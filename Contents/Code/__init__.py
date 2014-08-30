@@ -8,7 +8,12 @@ PREFIX = '/video/atv'
 
 VIDEOS_PER_PAGE = 25
 
+SHOW_SUM = "showsum"
+DICT_V = 1
+
 SEARCH_URL = BASE_URL + '/suche/%s?ext_search_submit=true&clip_page=%i&user_page=1&content_page=1&searchterm=%s&videos=1&v_atv_content=1&v_user_content=1&v_region=&m_region=&m_gender=&m_from_age='
+
+RE_ART = Regex('background-image: *url\((http.*\.jpg)\);')
 
 ##########################################################################################
 def Start():
@@ -22,6 +27,25 @@ def Start():
 
     HTTP.CacheTime             = CACHE_1HOUR
     HTTP.Headers['User-agent'] = HTTP_USER_AGENT
+    
+    if not "version" in Dict:
+        Log("No version number in dict, resetting")
+        Dict.Reset()
+        Dict["version"] = DICT_V
+        Dict.Save()
+
+    if Dict["version"] != DICT_V:
+        Log("Wrong version number in dict, resetting")
+        Dict.Reset()
+        Dict["version"] = DICT_V
+        Dict.Save()
+
+    if not SHOW_SUM in Dict:
+        Log("No summary dictionary, creating")
+        Dict[SHOW_SUM] = {}
+        Dict.Save()
+
+    Thread.Create(HarvestShowData)
 
 ##########################################################################################
 @handler(PREFIX, TITLE, thumb = ICON, art = ART)
@@ -44,6 +68,16 @@ def MainMenu():
     #    )
     #)
     
+    for object in Programs().objects:
+        oc.add(object) 
+    
+    return oc
+
+###################################################################################################
+@route(PREFIX + '/Programs')
+def Programs():
+    oc = ObjectContainer()
+    
     pageElement = HTML.ElementFromURL(BASE_URL + '/mediathek')
     
     for item in pageElement.xpath("//*[@class='program']"):
@@ -62,10 +96,13 @@ def MainMenu():
                         Videos,
                         url = url,
                         title = title,
-                        thumb = thumb
+                        thumb = thumb,
+                        art = GetShowArtUrl(title)
                     ),
                 title = title,
-                thumb = thumb
+                thumb = thumb,
+                summary = GetShowSummary(title),
+                art = GetShowArtUrl(title)
             )
         )
         
@@ -139,7 +176,7 @@ def Search(query, page = 1):
 
 ##########################################################################################
 @route(PREFIX + '/Videos', page = int)
-def Videos(url, title, thumb, page = 1):
+def Videos(url, title, thumb, art, page = 1):
     oc = ObjectContainer(title2 = title)
 
     element = HTML.ElementFromURL(url)
@@ -169,7 +206,8 @@ def Videos(url, title, thumb, page = 1):
     			title = title,
     			thumb = thumb,
     			index = index,
-    			show = show
+    			show = show,
+    			art = art
     		)
     	)
         
@@ -179,5 +217,64 @@ def Videos(url, title, thumb, page = 1):
         
     return oc      
 
+##########################################################################################
+def HarvestShowData():
+    programs_oc = Programs()
+    
+    for program_do in programs_oc.objects:
+        query = String.Unquote((program_do.key).split("?")[1])
+        showURL = String.ParseQueryString(query)['url'][0]
+        showName = unicode(program_do.title)
+
+        d = Dict[SHOW_SUM]
+        if showName in d:
+            td = Datetime.Now() - d[showName][2]
+            if td.days < 30:
+                Log("Got cached data for %s" % showName)
+                continue
+        else:
+            Log("no hit for %s" % showName)
+
+        pageElement = HTML.ElementFromURL(showURL)
+
+        #Find the summary for the show
+        summary = unicode(pageElement.xpath('//meta[@property="og:description"]/@content')[0])
+
+        imgUrl = unicode(program_do.thumb)
+        
+        try:
+            art = unicode(RE_ART.search(HTML.StringFromElement(pageElement)).groups()[0])
+        except:
+            art = None
+
+        t = Datetime.TimestampFromDatetime(Datetime.Now())
+        d[showName] = (showName, summary, Datetime.Now(), imgUrl, art)
+
+        #To prevent this thread from stealing too much network time
+        #we force it to sleep for every new page it loads
+        Dict[SHOW_SUM] = d
+        Dict.Save()
+        Thread.Sleep(1)
+            
+def GetShowSummary(showName):
+    d = Dict[SHOW_SUM]
+    showName = unicode(showName)
+    if showName in d:
+        return d[showName][1]
+    return ""
+
+def GetShowImgUrl(showName):
+    d = Dict[SHOW_SUM]
+    showName = unicode(showName)
+    if showName in d:
+        return d[showName][3]
+    return None
+    
+def GetShowArtUrl(showName):
+    d = Dict[SHOW_SUM]
+    showName = unicode(showName)
+    if showName in d:
+        return d[showName][4]
+    return None
 
  
