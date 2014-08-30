@@ -1,67 +1,38 @@
-from atv import GetVideoData
-
 ####################################################################################################
 def MetadataObjectForURL(url):
-    try:
-        video_id = url[url.rfind("/") + 1 :]
-    except:
-        raise Ex.MediaNotAvailable
-        
-    videoData = GetVideoData(url, video_id)
-        
+    element = HTML.ElementFromURL(url)
+
+    title = unicode(element.xpath("//meta[@property='og:title']/@content")[0])
+    thumb = element.xpath("//meta[@property='og:image']/@content")[0]
+    summary = unicode(element.xpath("//*[@class='plot_summary']/text()")[0])
+
     return EpisodeObject(
-        title = videoData['title'],
-        show = videoData['show'],
-        index = videoData['episode'],
-        season = videoData['season'],
-        summary = videoData['summary'],
-        thumb = videoData['thumb'],
-        duration = videoData['duration'],
-        originally_available_at = videoData['date']
+        title = title,
+        thumb = thumb,
+        summary = summary
     )
 
 ####################################################################################################
 @deferred
 def MediaObjectsForURL(url):
-    try:
-        video_id = url[url.rfind("/") + 1 :]
-    except:
-        raise Ex.MediaNotAvailable
+    element = HTML.ElementFromURL(url, cacheTime = 60)
     
-    streamDetails = JSON.ObjectFromURL('http://atv.at/getclip/' + video_id)['clip']
+    json_data_string = element.xpath("//*[@class='detail_content']/div/@data-jsb")[0]
+    json_data = JSON.ObjectFromString(json_data_string)['config']['initial_video']
     
     parts = []    
-    for partNo in range(0, len(streamDetails['video_urls'])):
-    	
-    	# Prefer HLS for iOS clients
-        if Client.Platform == 'iOS':
-            parts.append(
-                PartObject(
-                    key = HTTPLiveStreamURL(streamDetails['video_urls'][partNo]),
-                    duration = streamDetails['durations'][partNo] * 1000
-                )
+    for part in json_data['parts']:
+        parts.append(
+            PartObject(
+                key = HTTPLiveStreamURL(part['sources'][0]['src']),
+                duration = int(part['duration']) * 1000
             )
-        
-        # Use MP4 for the rest
-        else:
-            parts.append(
-                PartObject(
-                    key = streamDetails['video_progressive_urls'][partNo],
-                    duration = streamDetails['durations'][partNo] * 1000
-                )
-            )
-            
+        )
+          
     mo = MediaObject(
         video_resolution        = 360,
         audio_channels          = 2,
-        optimized_for_streaming = True,
-        duration                = streamDetails['duration'] * 1000,
         parts                   = parts
     )
-    
-    if Client.Platform != 'iOS':
-        mo.container   = Container.MP4
-        mo.video_codec = VideoCodec.H264
-        mo.audio_codec = AudioCodec.AAC
         
     return [mo]

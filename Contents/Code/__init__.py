@@ -1,5 +1,3 @@
-GetVideoData = SharedCodeService.atv.GetVideoData
-
 TITLE = 'ATV MediaThek'
 ART   = 'art-default.jpg'
 ICON  = 'icon-default.png'
@@ -36,23 +34,26 @@ def MainMenu():
         
         return oc
 
-    title = "Suche"
-    oc.add(
-        InputDirectoryObject(
-            key = Callback(Search),
-            title = title, 
-            prompt = title,
-            thumb = R(ICON)
-        )
-    )
+    #title = "Suche"
+    #oc.add(
+    #    InputDirectoryObject(
+    #        key = Callback(Search),
+    #        title = title, 
+    #        prompt = title,
+    #        thumb = R(ICON)
+    #    )
+    #)
     
     pageElement = HTML.ElementFromURL(BASE_URL + '/mediathek')
     
-    for item in pageElement.xpath("//*[@id='list_shows']//li"):
-        url     = BASE_URL + item.xpath(".//a/@href")[0]
-        title   = unicode(item.xpath(".//a/@title")[0].strip())
-        thumb   = item.xpath(".//img/@src")[0]
-        summary = ''.join(item.xpath(".//a/text()")).strip()
+    for item in pageElement.xpath("//*[@class='program']"):
+        url = item.xpath(".//a/@href")[0]
+        
+        if not url.startswith("http"):
+        	url = BASE_URL + url
+        
+        title = unicode(item.xpath(".//*[@class='program_title']/text()")[0].strip())
+        thumb = item.xpath(".//img/@src")[0]
         
         oc.add(
             DirectoryObject(
@@ -64,8 +65,7 @@ def MainMenu():
                         thumb = thumb
                     ),
                 title = title,
-                thumb = thumb,
-                summary = summary
+                thumb = thumb
             )
         )
         
@@ -138,42 +138,42 @@ def Search(query, page = 1):
         return oc
 
 ##########################################################################################
-@route(PREFIX + '/Videos', offset = int)
-def Videos(url, title, thumb, offset = 0):
+@route(PREFIX + '/Videos', page = int)
+def Videos(url, title, thumb, page = 1):
     oc = ObjectContainer(title2 = title)
+
+    element = HTML.ElementFromURL(url)
+    contentset_id = element.xpath("//section/@id")[0].replace("pi_", "")
     
-    videos = GetVideoData(url = url, offset = offset, max_videos = VIDEOS_PER_PAGE)
+    element = HTML.ElementFromURL('http://atv.at/uri/fepe/%s/?page=%i' % (contentset_id, page))
     
-    for video in videos:
-        oc.add(
-            EpisodeObject(
-                url = video['link'],
-                title = video['title'],
-                show = video['show'],
-                index = video['episode'],
-                season = video['season'],
-                summary = video['summary'],
-                thumb = video['thumb'],
-                duration = video['duration'],
-                originally_available_at = video['date']
-            )
-        )
+    show = title
+    
+    for item in element.xpath("//*[@class='teaser']"):
+    	url = item.xpath(".//a/@href")[0]
+    	
+    	if not url.startswith("http"):
+    		url = BASE_URL + url
+    	
+    	title = unicode(item.xpath(".//*[@class='title']/text()")[0])
+    	thumb = item.xpath(".//img/@src")[0]
+    	
+    	try:
+    		index = int(title.split(" ")[1])
+    	except:
+    		index = None
+    	
+    	oc.add(
+    		EpisodeObject(
+    			url = url,
+    			title = title,
+    			thumb = thumb,
+    			index = index,
+    			show = show
+    		)
+    	)
         
-    if len(oc) > 0:
-        if len(videos) >= VIDEOS_PER_PAGE:
-            oc.add(
-                NextPageObject(
-                    key =
-                        Callback(
-                            Videos,
-                            url = url,
-                            title = title,
-                            thumb = thumb,
-                            offset = offset + len(videos)
-                        )
-                )
-            )
-    else:
+    if len(oc) < 1:
         oc.header  = 'Sorry'
         oc.message = 'Could not find any content'
         
