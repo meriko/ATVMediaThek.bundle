@@ -7,6 +7,8 @@ BASE_URL = "http://atv.at"
 PREFIX = '/video/atv'
 
 VIDEOS_PER_PAGE = 25
+SITE_VIDEOS_PER_PAGE = 6
+
 
 SHOW_SUM = "showsum"
 DICT_V = 1
@@ -84,7 +86,7 @@ def Programs():
         url = item.xpath(".//a/@href")[0]
         
         if not url.startswith("http"):
-        	url = BASE_URL + url
+            url = BASE_URL + url
         
         title = unicode(item.xpath(".//*[@class='program_title']/text()")[0].strip())
         thumb = item.xpath(".//img/@src")[0]
@@ -175,46 +177,81 @@ def Search(query, page = 1):
         return oc
 
 ##########################################################################################
-@route(PREFIX + '/Videos', page = int)
-def Videos(url, title, thumb, art, page = 1):
-    oc = ObjectContainer(title2 = title)
+@route(PREFIX + '/Videos', page = int, offset = int)
+def Videos(url, title, thumb, art, page = 1, contentset_id = None, offset = 0):
+    oc = ObjectContainer(title2 = unicode(title))
 
-    element = HTML.ElementFromURL(url)
-    contentset_id = element.xpath("//section/@id")[0].replace("pi_", "")
-    
-    element = HTML.ElementFromURL('http://atv.at/uri/fepe/%s/?page=%i' % (contentset_id, page))
+    if not contentset_id:
+        element = HTML.ElementFromURL(url)
+        contentset_id = element.xpath("//section/@id")[0].replace("pi_", "")
     
     show = title
     
-    for item in element.xpath("//*[@class='teaser']"):
-    	url = item.xpath(".//a/@href")[0]
-    	
-    	if not url.startswith("http"):
-    		url = BASE_URL + url
-    	
-    	title = unicode(item.xpath(".//*[@class='title']/text()")[0])
-    	thumb = item.xpath(".//img/@src")[0]
-    	
-    	try:
-    		index = int(title.split(" ")[1])
-    	except:
-    		index = None
-    	
-    	oc.add(
-    		EpisodeObject(
-    			url = url,
-    			title = title,
-    			thumb = thumb,
-    			index = index,
-    			show = show,
-    			art = art
-    		)
-    	)
+    requiredPages = (VIDEOS_PER_PAGE / SITE_VIDEOS_PER_PAGE) + 1
+    
+    for i in range(requiredPages):
+        content = HTTP.Request('http://atv.at/uri/fepe/%s/?page=%i' % (contentset_id, page)).content
+        
+        if not 'video' in content:
+            break
+             
+        element = HTML.ElementFromString(content)
+        
+        noVideos = 0
+        
+        for item in element.xpath("//*[@class='teaser']")[offset:]:
+            videoURL = item.xpath(".//a/@href")[0]
+            
+            if not videoURL.startswith("http"):
+                videoURL = BASE_URL + videoURL
+            
+            videoTitle = unicode(item.xpath(".//*[@class='title']/text()")[0])
+            videoThumb = item.xpath(".//img/@src")[0]
+            
+            try:
+                index = int(videoTitle.split(" ")[1])
+            except:
+                index = None
+            
+            oc.add(
+                EpisodeObject(
+                    url = videoURL,
+                    title = videoTitle,
+                    thumb = videoThumb,
+                    index = index,
+                    show = show,
+                    art = art
+                )
+            )
+            
+            noVideos = noVideos + 1
+            
+            if len(oc) >= VIDEOS_PER_PAGE:
+                oc.add(
+                    NextPageObject(
+                        key =
+                            Callback(
+                                Videos,
+                                url = url,
+                                title = show,
+                                thumb = thumb,
+                                art = art,
+                                page = page,
+                                contentset_id = contentset_id,
+                                offset = noVideos
+                            )
+                    )
+                )
+                
+                break
+        
+        page = page + 1
+        offset = 0
         
     if len(oc) < 1:
         oc.header  = 'Sorry'
         oc.message = 'Could not find any content'
-        
+    
     return oc      
 
 ##########################################################################################
